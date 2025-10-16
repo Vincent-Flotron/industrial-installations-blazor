@@ -15,7 +15,7 @@
   @if (Sensor.IsRecording)
   {
     <div class="card-footer">
-      <LineChart Data="@Sensor.History" />
+      <LineChart Data="@Sensor.History" Height="260" YTicks="6" />
     </div>
   }
 </div>

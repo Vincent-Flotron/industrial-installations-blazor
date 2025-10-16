@@ -1,41 +1,156 @@
 @using BlazorApp.Models
 
-<svg width="100%" height="150" viewBox="0 0 400 150">
-    @if (Points.Count > 1)
-    {
-        <polyline fill="none" stroke="#007bff" stroke-width="2" points="@string.Join(' ', Points.Select(p => $"{p.X},{p.Y}"))" />
-    }
-    <line x1="0" y1="149" x2="400" y2="149" stroke="#ddd" stroke-width="1" />
-</svg>
+@if (Data?.Count > 1)
+{
+    <svg width="100%" height="@Height" viewBox="@($"0 0 {ViewWidth} {Height}")" preserveAspectRatio="none">
+        <g transform="@($"translate({MarginLeft}, {MarginTop})")">
+            <!-- Grid lines -->
+            @for (int i = 0; i <= YTicks; i++)
+            {
+                var y = PlotTop + i * (PlotHeight / YTicks);
+                <line x1="@PlotLeft" y1="@y" x2="@PlotRight" y2="@y" stroke="#eee" stroke-width="1" />
+            }
+
+            <!-- Y axis -->
+            <line x1="@PlotLeft" y1="@PlotTop" x2="@PlotLeft" y2="@PlotBottom" stroke="#999" stroke-width="1" />
+            <!-- X axis -->
+            <line x1="@PlotLeft" y1="@PlotBottom" x2="@PlotRight" y2="@PlotBottom" stroke="#999" stroke-width="1" />
+
+            <!-- Y tick labels -->
+            @((MarkupString)GetYLabelsSvg())
+
+            <!-- X tick labels: first, middle, last timestamps -->
+            @((MarkupString)GetXLabelsSvg())
+
+            <!-- Data polyline -->
+            <polyline fill="none" stroke="@LineColor" stroke-width="2" points="@PolylinePoints" />
+        </g>
+    </svg>
+}
+else
+{
+    <div class="text-muted" style="font-size: 0.9rem;">No data</div>
+}
 
 @code {
     [Parameter] public IReadOnlyList<(DateTime Timestamp, double Value)> Data { get; set; } = Array.Empty<(DateTime, double)>();
+    [Parameter] public double Height { get; set; } = 220;
+    [Parameter] public int YTicks { get; set; } = 5;
+    [Parameter] public string LineColor { get; set; } = "#007bff";
 
-    private struct Pt { public double X; public double Y; }
-    private List<Pt> Points { get; set; } = new();
+    private double MarginLeft => 50;
+    private double MarginRight => 10;
+    private double MarginTop => 10;
+    private double MarginBottom => 20;
+    private double ViewWidth => 600; // responsive via width="100%"
+    private double PlotLeft => 0;
+    private double PlotTop => 0;
+    private double PlotWidth => ViewWidth - (MarginLeft + MarginRight);
+    private double PlotHeight => Height - (MarginTop + MarginBottom);
+    private double PlotRight => PlotLeft + PlotWidth;
+    private double PlotBottom => PlotTop + PlotHeight;
+
+    private DateTime MinTime, MaxTime, MidTime;
+    private double YMin, YMax, YStep;
+    private string PolylinePoints = string.Empty;
 
     protected override void OnParametersSet()
     {
-        Points.Clear();
-        if (Data == null || Data.Count == 0)
+        if (Data == null || Data.Count < 2)
+        {
+            PolylinePoints = string.Empty;
             return;
+        }
 
-        var minX = Data.First().Timestamp;
-        var maxX = Data.Last().Timestamp;
+        MinTime = Data.First().Timestamp;
+        MaxTime = Data.Last().Timestamp;
+        MidTime = MinTime + TimeSpan.FromMilliseconds((MaxTime - MinTime).TotalMilliseconds / 2.0);
+
         var minY = Data.Min(d => d.Value);
         var maxY = Data.Max(d => d.Value);
-        if (Math.Abs(maxY - minY) < 1e-6)
+        if (Math.Abs(maxY - minY) < 1e-9)
         {
-            maxY = minY + 1; // avoid div by zero
+            maxY = minY + 1; // avoid zero range
         }
-        var totalMs = (maxX - minX).TotalMilliseconds;
-        if (totalMs < 1) totalMs = 1;
 
+        // Expand and compute nice ticks
+        ComputeNiceAxis(minY, maxY, YTicks, out YMin, out YMax, out YStep);
+
+        var sb = new System.Text.StringBuilder();
         foreach (var (t, v) in Data)
         {
-            var x = (t - minX).TotalMilliseconds / totalMs * 400.0;
-            var y = 150.0 - ((v - minY) / (maxY - minY) * 140.0 + 5.0);
-            Points.Add(new Pt { X = x, Y = y });
+            var x = ScaleX(t);
+            var y = ScaleY(v);
+            sb.Append(x.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            sb.Append(',');
+            sb.Append(y.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            sb.Append(' ');
         }
+        PolylinePoints = sb.ToString().TrimEnd();
+    }
+
+    private double ScaleX(DateTime t)
+    {
+        var totalMs = (MaxTime - MinTime).TotalMilliseconds;
+        if (totalMs <= 0) totalMs = 1;
+        var rel = (t - MinTime).TotalMilliseconds / totalMs;
+        return MarginLeft + rel * PlotWidth;
+    }
+
+    private double ScaleY(double v)
+    {
+        var rel = (v - YMin) / (YMax - YMin);
+        return MarginTop + (1 - rel) * PlotHeight;
+    }
+
+    private static void ComputeNiceAxis(double min, double max, int ticks, out double niceMin, out double niceMax, out double niceStep)
+    {
+        var range = NiceNum(max - min, false);
+        niceStep = NiceNum(range / (ticks == 0 ? 5 : ticks), true);
+        niceMin = Math.Floor(min / niceStep) * niceStep;
+        niceMax = Math.Ceiling(max / niceStep) * niceStep;
+    }
+
+    private static double NiceNum(double range, bool round)
+    {
+        var exp = Math.Floor(Math.Log10(range <= 0 ? 1 : range));
+        var f = range / Math.Pow(10, exp);
+        double nf;
+        if (round)
+        {
+            if (f < 1.5) nf = 1;
+            else if (f < 3) nf = 2;
+            else if (f < 7) nf = 5;
+            else nf = 10;
+        }
+        else
+        {
+            if (f <= 1) nf = 1;
+            else if (f <= 2) nf = 2;
+            else if (f <= 5) nf = 5;
+            else nf = 10;
+        }
+        return nf * Math.Pow(10, exp);
+    }
+
+    private string GetYLabelsSvg()
+    {
+        var sb = new System.Text.StringBuilder();
+        for (int i = 0; i <= YTicks; i++)
+        {
+            var v = YMax - i * YStep;
+            var y = ScaleY(v);
+            sb.Append($"<text x='{PlotLeft - 6}' y='{y + 4}' text-anchor='end' font-size='10' fill='#666'>{v.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture)}</text>");
+        }
+        return sb.ToString();
+    }
+
+    private string GetXLabelsSvg()
+    {
+        var sb = new System.Text.StringBuilder();
+        sb.Append($"<text x='{PlotLeft}' y='{PlotBottom + 14}' text-anchor='start' font-size='10' fill='#666'>{MinTime.ToLocalTime():HH:mm:ss}</text>");
+        sb.Append($"<text x='{(PlotLeft + PlotRight) / 2}' y='{PlotBottom + 14}' text-anchor='middle' font-size='10' fill='#666'>{MidTime.ToLocalTime():HH:mm:ss}</text>");
+        sb.Append($"<text x='{PlotRight}' y='{PlotBottom + 14}' text-anchor='end' font-size='10' fill='#666'>{MaxTime.ToLocalTime():HH:mm:ss}</text>");
+        return sb.ToString();
     }
 }
