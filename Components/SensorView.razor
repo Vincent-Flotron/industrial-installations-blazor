@@ -1,0 +1,30 @@
+@using BlazorApp.Models
+
+<div class="card mb-2">
+  <div class="card-body d-flex align-items-center justify-content-between">
+    <div>
+      <div><strong>@Sensor.Name</strong> (@Sensor.Type)</div>
+      <div>Value: <strong>@Sensor.CurrentValue.ToString("0.00")</strong></div>
+    </div>
+    <div>
+      <button class="btn btn-sm @(Sensor.IsRecording ? "btn-danger" : "btn-outline-primary")" @onclick="ToggleRecording">
+        @(Sensor.IsRecording ? "Stop Recording" : "Record")
+      </button>
+    </div>
+  </div>
+  @if (Sensor.IsRecording)
+  {
+    <div class="card-footer">
+      <LineChart Data="@Sensor.History" />
+    </div>
+  }
+</div>
+
+@code {
+  [Parameter] public Sensor Sensor { get; set; } = default!;
+
+  private void ToggleRecording()
+  {
+    Sensor.IsRecording = !Sensor.IsRecording;
+  }
+}

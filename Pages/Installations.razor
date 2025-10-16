@@ -1,0 +1,139 @@
+@page "/installations"
+@implements IDisposable
+@using BlazorApp.Models
+@using BlazorApp.Services
+@inject InstallationService InstallationService
+@inject NavigationManager Nav
+
+<PageTitle>Installations</PageTitle>
+
+<h1>Industrial Installations</h1>
+
+<div class="row">
+  <div class="col-md-4">
+    <h3>Create Installation</h3>
+    <EditForm Model="_newInstallation" OnValidSubmit="CreateInstallation">
+      <DataAnnotationsValidator />
+      <div class="mb-2">
+        <label class="form-label">Name</label>
+        <InputText class="form-control" @bind-Value="_newInstallation.Name" />
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Location</label>
+        <InputText class="form-control" @bind-Value="_newInstallation.Location" />
+      </div>
+      <div class="mb-2">
+        <label class="form-label">Previous installation</label>
+        <InputSelect class="form-select" @bind-Value="_newInstallation.PreviousInstallationId">
+          <option value="">None</option>
+          @foreach (var i in InstallationService.Installations)
+          {
+            <option value="@i.Id">@i.Name</option>
+          }
+        </InputSelect>
+      </div>
+      <button class="btn btn-primary" type="submit">Add</button>
+    </EditForm>
+  </div>
+  <div class="col-md-8">
+    <h3>Production Line</h3>
+    @if (InstallationService.Installations.Count == 0)
+    {
+      <p>No installations yet.</p>
+    }
+    else
+    {
+      @foreach (var inst in InstallationService.Installations)
+      {
+        <div class="card mb-3">
+          <div class="card-header d-flex justify-content-between align-items-center">
+            <div>
+              <strong>@inst.Name</strong> @if(!string.IsNullOrWhiteSpace(inst.Location)){<span class="text-muted">(@inst.Location)</span>} 
+              @if (inst.PreviousInstallationId is Guid pid)
+              {
+                var prev = InstallationService.Installations.FirstOrDefault(x => x.Id == pid);
+                if (prev is not null)
+                {
+                  <span class="ms-2 badge bg-secondary">prev: @prev.Name</span>
+                }
+              }
+            </div>
+            <button class="btn btn-sm btn-outline-danger" @onclick="() => RemoveInstallation(inst.Id)">Remove</button>
+          </div>
+          <div class="card-body">
+            <h6>Sensors</h6>
+            @if (inst.Sensors.Count == 0)
+            {
+              <p class="text-muted">No sensors. Add one below.</p>
+            }
+            @foreach (var s in inst.Sensors)
+            {
+              <SensorView Sensor="s" />
+            }
+
+            <div class="mt-3">
+              <h6>Add sensor</h6>
+              <div class="row g-2">
+                <div class="col">
+                  <input class="form-control" placeholder="Sensor name" @bind="_newSensorName" />
+                </div>
+                <div class="col-auto">
+                  <select class="form-select" @bind="_newSensorType">
+                    <option value="@SensorType.Temp">Temp</option>
+                    <option value="@SensorType.Speed">Speed</option>
+                    <option value="@SensorType.Torque">Torque</option>
+                  </select>
+                </div>
+                <div class="col-auto">
+                  <button class="btn btn-outline-primary" @onclick="() => AddSensor(inst.Id)">Add</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      }
+    }
+  </div>
+</div>
+
+@code {
+  private IndustrialInstallation _newInstallation = new();
+  private string _newSensorName = string.Empty;
+  private SensorType _newSensorType = SensorType.Temp;
+
+  protected override void OnInitialized()
+  {
+      InstallationService.Updated += OnUpdated;
+  }
+
+  private void OnUpdated()
+  {
+      InvokeAsync(StateHasChanged);
+  }
+
+  private void CreateInstallation()
+  {
+      InstallationService.CreateInstallation(_newInstallation.Name, _newInstallation.Location, _newInstallation.PreviousInstallationId);
+      _newInstallation = new();
+  }
+
+  private void RemoveInstallation(Guid id)
+  {
+      InstallationService.RemoveInstallation(id);
+  }
+
+  private void AddSensor(Guid instId)
+  {
+      if (!string.IsNullOrWhiteSpace(_newSensorName))
+      {
+          InstallationService.AddSensor(instId, _newSensorName, _newSensorType);
+          _newSensorName = string.Empty;
+          _newSensorType = SensorType.Temp;
+      }
+  }
+
+  public void Dispose()
+  {
+      InstallationService.Updated -= OnUpdated;
+  }
+}

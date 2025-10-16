@@ -1,0 +1,41 @@
+@using BlazorApp.Models
+
+<svg width="100%" height="150" viewBox="0 0 400 150">
+    @if (Points.Count > 1)
+    {
+        <polyline fill="none" stroke="#007bff" stroke-width="2" points="@string.Join(' ', Points.Select(p => $"{p.X},{p.Y}"))" />
+    }
+    <line x1="0" y1="149" x2="400" y2="149" stroke="#ddd" stroke-width="1" />
+</svg>
+
+@code {
+    [Parameter] public IReadOnlyList<(DateTime Timestamp, double Value)> Data { get; set; } = Array.Empty<(DateTime, double)>();
+
+    private struct Pt { public double X; public double Y; }
+    private List<Pt> Points { get; set; } = new();
+
+    protected override void OnParametersSet()
+    {
+        Points.Clear();
+        if (Data == null || Data.Count == 0)
+            return;
+
+        var minX = Data.First().Timestamp;
+        var maxX = Data.Last().Timestamp;
+        var minY = Data.Min(d => d.Value);
+        var maxY = Data.Max(d => d.Value);
+        if (Math.Abs(maxY - minY) < 1e-6)
+        {
+            maxY = minY + 1; // avoid div by zero
+        }
+        var totalMs = (maxX - minX).TotalMilliseconds;
+        if (totalMs < 1) totalMs = 1;
+
+        foreach (var (t, v) in Data)
+        {
+            var x = (t - minX).TotalMilliseconds / totalMs * 400.0;
+            var y = 150.0 - ((v - minY) / (maxY - minY) * 140.0 + 5.0);
+            Points.Add(new Pt { X = x, Y = y });
+        }
+    }
+}
